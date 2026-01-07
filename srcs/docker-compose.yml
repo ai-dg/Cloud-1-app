@@ -1,0 +1,113 @@
+services:
+  nginx:
+    container_name: nginx
+    build: 
+      context: .
+      dockerfile: ./requirements/nginx/Dockerfile
+    ports:
+      - 443:443
+    volumes:
+      - wordpress_data:/var/www/html
+    networks:
+      - cloudy
+    depends_on:
+      - wordpress
+    restart: unless-stopped 
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    environment:
+      PMA_HOST: db
+      # PMA_USER: ${MYSQL_USER}
+      # PMA_PASSWORD: ${MYSQL_PASSWORD}
+      PMA_ABSOLUTE_URI: ${PMA_ABSOLUTE_URI}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+    restart: unless-stopped 
+    networks:
+      - cloudy
+    
+  wordpress:
+    container_name: wordpress
+    build: 
+      context: .
+      dockerfile: ./requirements/wordpress/Dockerfile
+    volumes: 
+       - wordpress_data:/var/www/html
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: ${MYSQL_USER}
+      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
+    env_file:
+    - .env
+    expose:
+    - "9000"
+    networks:
+      - cloudy
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    container_name: mysql
+    build: 
+      context: .
+      dockerfile: ./requirements/mysql/Dockerfile
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - /root/dump.sql:/docker-entrypoint-initdb.d/dump.sql:ro
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - cloudy
+    env_file:
+    - .env
+    restart: unless-stopped
+
+  grafana:
+    container_name: grafana
+    build:
+      context: .
+      dockerfile: ./requirements/grafana/Dockerfile
+      args:
+        GRAFANA_USER_NAME: "${GRAFANA_USER_NAME}"
+        GRAFANA_PWD: "${GRAFANA_PWD}"
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost/grafana
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_PROTOCOL: http
+      GF_SERVER_ENFORCE_DOMAIN: "false"
+    restart: unless-stopped 
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - cloudy
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    volumes:
+      - prometheus_data:/prometheus
+    restart: unless-stopped 
+    networks:
+      - cloudy
+    
+networks:
+  cloudy:
+    driver: bridge
+
+volumes:
+  wordpress_data:
+  prometheus_data:
+  mysql_data:
+  grafana_data:
